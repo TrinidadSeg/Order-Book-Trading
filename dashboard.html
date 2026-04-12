@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kalshi Order Book</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07090c;--s1:#0f1318;--s2:#161b22;--border:#1e242d;
+  --text:#dde3ec;--muted:#4b5668;--yes:#34d399;--no:#f87171;
+  --mid:#7dd3fc;--amber:#fbbf24;--purple:#a78bfa;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;padding:20px;min-height:100vh}
+
+.header{display:flex;flex-direction:column;gap:6px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.header-top{display:flex;align-items:center;justify-content:space-between}
+.market-title{font-size:15px;font-weight:500}
+.market-subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+.header-right{display:flex;align-items:center;gap:16px}
+.status{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.dot.live{background:var(--yes);box-shadow:0 0 5px var(--yes)}
+.flush-badge{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--s2);border:1px solid var(--border);padding:2px 8px;border-radius:4px}
+
+.context-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.ctx-card{background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px 14px}
+.ctx-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.ctx-value{font-family:var(--mono);font-size:16px;font-weight:500;transition:color .3s}
+.ctx-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.vel-bar{height:4px;background:var(--s2);border-radius:2px;margin-top:6px;overflow:hidden}
+.vel-fill{height:100%;border-radius:2px;transition:width .6s ease,background .3s ease}
+
+.main{display:grid;grid-template-columns:220px 220px 1fr;gap:14px}
+.panel{background:var(--s1);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.panel-hdr{padding:8px 14px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:flex;justify-content:space-between;align-items:center}
+
+/* Ladder — fixed 10 rows, always present */
+.book-tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+.book-tbl th{padding:5px 14px;text-align:right;font-size:10px;color:var(--muted);font-weight:400;border-bottom:1px solid var(--border)}
+.book-tbl th:first-child{text-align:left}
+.book-tbl td{padding:5px 14px;text-align:right;position:relative;transition:color .2s}
+.book-tbl td:first-child{text-align:left;color:var(--muted)}
+.bar{position:absolute;top:0;bottom:0;right:0;opacity:.1;border-radius:2px 0 0 2px;transition:width .4s ease}
+.yes-row{color:var(--yes)}.no-row{color:var(--no)}
+.empty-row td{color:var(--muted) !important;text-align:center}
+
+.right-col{display:flex;flex-direction:column;gap:12px}
+#chart-wrap{padding:14px;height:200px;position:relative}
+
+.imbal-wrap{padding:12px 14px}
+.imbal-track{height:8px;background:var(--s2);border-radius:4px;overflow:hidden;position:relative}
+.imbal-fill{position:absolute;top:0;bottom:0;background:var(--yes);border-radius:4px;transition:all .5s ease}
+.imbal-fill.neg{background:var(--no)}
+.imbal-lbls{display:flex;justify-content:space-between;margin-top:5px;font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+/* Trade rows — fixed 25, always present, just update content */
+.trades-hdr{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;padding:5px 14px;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border)}
+.trade-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;padding:5px 14px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--muted);transition:background .15s,opacity .2s}
+.trade-row:hover{background:var(--s2)}
+.trade-row.buy .t-ts{color:var(--yes)}.trade-row.sell .t-ts{color:var(--no)}
+.trade-row.empty{opacity:.2}
+.side-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500}
+.side-badge.buy{background:rgba(52,211,153,.15);color:var(--yes)}
+.side-badge.sell{background:rgba(248,113,113,.15);color:var(--no)}
+
+.rules-btn{font-size:10px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:3px;padding:2px 7px;cursor:pointer;font-family:var(--mono)}
+.rules-btn:hover{color:var(--text)}
+#rules-panel{display:none;margin-top:10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.6;white-space:pre-wrap}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="market-title" id="market-title">Loading…</div>
+      <div class="market-subtitle" id="market-subtitle"></div>
+    </div>
+    <div class="header-right">
+      <span class="flush-badge" id="flush-badge">flush: —</span>
+      <div class="status"><span class="dot" id="dot"></span><span id="status-txt">connecting…</span></div>
+      <button class="rules-btn" onclick="toggleRules()">rules</button>
+    </div>
+  </div>
+  <div id="rules-panel"></div>
+</div>
+
+<div class="context-bar">
+  <div class="ctx-card">
+    <div class="ctx-label">Time to Expiry</div>
+    <div class="ctx-value" id="ctx-tte">—</div>
+    <div class="ctx-sub" id="ctx-close">—</div>
+  </div>
+  <div class="ctx-card">
+    <div class="ctx-label">Price Velocity (10s)</div>
+    <div class="ctx-value" id="ctx-vel">—</div>
+    <div class="vel-bar"><div class="vel-fill" id="vel-fill" style="width:0%"></div></div>
+  </div>
+  <div class="ctx-card">
+    <div class="ctx-label">Volume</div>
+    <div class="ctx-value" style="color:var(--mid)" id="ctx-vol5">—</div>
+    <div class="ctx-sub" id="ctx-vol-detail">5m / 10m / 30m</div>
+  </div>
+  <div class="ctx-card">
+    <div class="ctx-label">24h Volume</div>
+    <div class="ctx-value" style="color:var(--purple)" id="ctx-vol24">—</div>
+    <div class="ctx-sub" id="ctx-oi">OI: —</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="panel">
+    <div class="panel-hdr"><span>Yes bids</span><span id="yes-depth-hdr">—</span></div>
+    <table class="book-tbl">
+      <thead><tr><th>#</th><th>Price</th><th>Size</th></tr></thead>
+      <tbody id="yes-ladder"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hdr"><span>No bids</span><span id="no-depth-hdr">—</span></div>
+    <table class="book-tbl">
+      <thead><tr><th>#</th><th>Price</th><th>Size</th></tr></thead>
+      <tbody id="no-ladder"></tbody>
+    </table>
+  </div>
+
+  <div class="right-col">
+    <div class="panel">
+      <div class="panel-hdr"><span>Mid price</span><span id="mid-now">—</span></div>
+      <div id="chart-wrap"><canvas id="mid-chart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span>Order book imbalance</span><span id="imbal-val">—</span></div>
+      <div class="imbal-wrap">
+        <div class="imbal-track"><div class="imbal-fill" id="imbal-fill" style="width:0%;left:50%"></div></div>
+        <div class="imbal-lbls">
+          <span id="yes-d-lbl">Yes —</span><span>← →</span><span id="no-d-lbl">No —</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hdr"><span>Trades</span><span id="trade-count">—</span></div>
+      <div class="trades-hdr"><span>Time</span><span>Side</span><span>Yes price</span><span>Size</span></div>
+      <div id="trade-rows"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const API = 'http://localhost:8000/api';
+const c   = v => v != null ? (v*100).toFixed(2)+'¢' : '—';
+const f1  = v => v != null ? (+v).toFixed(1) : '—';
+const LADDER_ROWS = 10;
+const TRADE_ROWS  = 25;
+
+// ── Build DOM once, update in place ─────────────────────
+
+function buildLadder(tbodyId, cls) {
+  const tb = document.getElementById(tbodyId);
+  tb.innerHTML = '';
+  for (let i = 0; i < LADDER_ROWS; i++) {
+    const tr = document.createElement('tr');
+    tr.className = `${cls}-row`;
+    tr.id = `${tbodyId}-row-${i}`;
+    tr.innerHTML = `<td class="lv-num">${i+1}</td><td class="lv-price">—</td>
+      <td class="lv-size" style="position:relative">
+        <div class="bar" style="width:0%;background:var(--${cls==='yes'?'yes':'no'})"></div>
+        <span class="lv-sz-val">—</span>
+      </td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function updateLadder(tbodyId, levels, cls, maxSz) {
+  for (let i = 0; i < LADDER_ROWS; i++) {
+    const tr    = document.getElementById(`${tbodyId}-row-${i}`);
+    const lv    = levels[i];
+    const price = tr.querySelector('.lv-price');
+    const szVal = tr.querySelector('.lv-sz-val');
+    const bar   = tr.querySelector('.bar');
+
+    if (lv) {
+      tr.className = `${cls}-row`;
+      price.textContent = (lv.price * 100).toFixed(2) + '¢';
+      szVal.textContent  = lv.size.toFixed(1);
+      bar.style.width    = (maxSz > 0 ? lv.size / maxSz * 100 : 0).toFixed(1) + '%';
+    } else {
+      tr.className = 'empty-row';
+      price.textContent = '—';
+      szVal.textContent  = '—';
+      bar.style.width    = '0%';
+    }
+  }
+}
+
+function buildTradeRows() {
+  const el = document.getElementById('trade-rows');
+  el.innerHTML = '';
+  for (let i = 0; i < TRADE_ROWS; i++) {
+    const div = document.createElement('div');
+    div.className = 'trade-row empty';
+    div.id = `trade-row-${i}`;
+    div.innerHTML = `<span class="t-ts">—</span><span class="t-side"></span>
+                     <span class="t-price">—</span><span class="t-size">—</span>`;
+    el.appendChild(div);
+  }
+}
+
+function updateTradeRows(trades) {
+  document.getElementById('trade-count').textContent = trades.length + ' recent';
+  for (let i = 0; i < TRADE_ROWS; i++) {
+    const div   = document.getElementById(`trade-row-${i}`);
+    const trade = trades[i];
+    if (trade) {
+      const isBuy = trade.taker_side === 'yes';
+      div.className = `trade-row ${isBuy ? 'buy' : 'sell'}`;
+      div.querySelector('.t-ts').textContent    = trade.timestamp ? new Date(trade.timestamp).toLocaleTimeString() : '—';
+      div.querySelector('.t-side').innerHTML    = `<span class="side-badge ${isBuy?'buy':'sell'}">${trade.taker_side||'—'}</span>`;
+      div.querySelector('.t-price').textContent = trade.yes_price != null ? (trade.yes_price*100).toFixed(2)+'¢' : '—';
+      div.querySelector('.t-size').textContent  = trade.count != null ? parseFloat(trade.count).toFixed(1) : '—';
+    } else {
+      div.className = 'trade-row empty';
+      div.querySelector('.t-ts').textContent    = '—';
+      div.querySelector('.t-side').innerHTML    = '';
+      div.querySelector('.t-price').textContent = '—';
+      div.querySelector('.t-size').textContent  = '—';
+    }
+  }
+}
+
+function extractLadder(row, side) {
+  const out = [];
+  for (let i = 1; i <= 10; i++) {
+    const p = row[`${side}_bid_${i}_price`], s = row[`${side}_bid_${i}_size`];
+    if (p == null) break;
+    out.push({ price: p, size: s });
+  }
+  return out;
+}
+
+// ── Chart ────────────────────────────────────────────────
+const ctx = document.getElementById('mid-chart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: { labels: [], datasets: [{
+    data: [], borderColor: '#7dd3fc', borderWidth: 1.5,
+    pointRadius: 0, tension: 0.3,
+    fill: { target: 'origin', above: 'rgba(125,211,252,0.05)' }
+  }]},
+  options: {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color:'#4b5668', font:{family:'IBM Plex Mono',size:9}, maxTicksLimit:5 }, grid:{color:'#1e242d'} },
+      y: { ticks: { color:'#4b5668', font:{family:'IBM Plex Mono',size:9}, callback: v=>(v*100).toFixed(1)+'¢' }, grid:{color:'#1e242d'} }
+    }
+  }
+});
+
+// ── Helpers ──────────────────────────────────────────────
+function fmtTTE(s) {
+  if (s == null) return '—';
+  if (s < 60)    return s + 's';
+  if (s < 3600)  return Math.floor(s/60) + 'm ' + String(s%60).padStart(2,'0') + 's';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  if (s < 86400) return h + 'h ' + m + 'm';
+  return Math.floor(s/86400) + 'd ' + (h%24) + 'h';
+}
+function tteColor(s) {
+  if (s == null) return 'var(--amber)';
+  if (s < 300)   return 'var(--no)';
+  if (s < 3600)  return 'var(--amber)';
+  return 'var(--yes)';
+}
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(val)) el.textContent = val;
+}
+function setStyle(id, prop, val) {
+  const el = document.getElementById(id);
+  if (el) el.style[prop] = val;
+}
+
+// ── Meta ─────────────────────────────────────────────────
+let metaLoaded = false;
+async function loadMeta() {
+  try {
+    const meta = await fetch(`${API}/meta`).then(r => r.json());
+    setText('market-title',   meta.title || meta.ticker);
+    setText('market-subtitle', meta.subtitle || '');
+    if (meta.rules) document.getElementById('rules-panel').textContent = meta.rules;
+    if (meta.volume_24h != null) setText('ctx-vol24', meta.volume_24h.toFixed(0) + ' contracts');
+    if (meta.open_interest != null) setText('ctx-oi', 'OI: ' + meta.open_interest.toFixed(0));
+    if (meta.close_time) setText('ctx-close', new Date(meta.close_time).toLocaleString());
+    metaLoaded = true;
+  } catch(e) {}
+}
+
+// ── Main poll ─────────────────────────────────────────────
+async function poll() {
+  try {
+    const [book, hist, trades, signals] = await Promise.all([
+      fetch(`${API}/book`).then(r=>r.json()),
+      fetch(`${API}/history?n=120`).then(r=>r.json()),
+      fetch(`${API}/trades`).then(r=>r.json()),
+      fetch(`${API}/signals`).then(r=>r.json()),
+    ]);
+
+    if (book.error) { setStatus(false, book.error); return; }
+
+    setStatus(true, new Date().toLocaleTimeString());
+
+    // Flush age
+    if (book.timestamp) {
+      const age = (Date.now()/1000 - book.timestamp).toFixed(1);
+      setText('flush-badge', `flush: ${age}s ago`);
+    }
+
+    // Mid
+    setText('mid-now', c(book.mid));
+
+    // TTE
+    const tte = signals.time_to_expiry_s ?? null;
+    document.getElementById('ctx-tte').textContent = fmtTTE(tte);
+    document.getElementById('ctx-tte').style.color  = tteColor(tte);
+
+    // Velocity
+    const vel = signals.price_velocity_10s ?? null;
+    const velEl = document.getElementById('ctx-vel');
+    const velFill = document.getElementById('vel-fill');
+    if (vel != null) {
+      velEl.textContent = (vel>0?'+':'') + vel.toFixed(2) + '¢/10s';
+      velEl.style.color = vel > 0 ? 'var(--yes)' : vel < 0 ? 'var(--no)' : 'var(--muted)';
+      velFill.style.width      = (Math.min(Math.abs(vel),5)/5*100) + '%';
+      velFill.style.background = vel > 0 ? 'var(--yes)' : 'var(--no)';
+    }
+
+    // Volume
+    const v5  = signals.volume_5m  ?? 0;
+    const v10 = signals.volume_10m ?? 0;
+    const v30 = signals.volume_30m ?? 0;
+    setText('ctx-vol5',       v5.toFixed(1));
+    setText('ctx-vol-detail', `${v5.toFixed(1)} / ${v10.toFixed(1)} / ${v30.toFixed(1)}`);
+
+    // Ladders
+    const yes = extractLadder(book, 'yes');
+    const no  = extractLadder(book, 'no');
+    const mx  = Math.max(...yes.map(l=>l.size), ...no.map(l=>l.size), 1);
+    updateLadder('yes-ladder', yes, 'yes', mx);
+    updateLadder('no-ladder',  no,  'no',  mx);
+    setText('yes-depth-hdr', f1(book.yes_depth));
+    setText('no-depth-hdr',  f1(book.no_depth));
+
+    // Imbalance
+    const imbal = book.imbalance;
+    setText('imbal-val', imbal != null ? (imbal>0?'+':'')+(imbal*100).toFixed(1)+'%' : '—');
+    setText('yes-d-lbl', 'Yes ' + f1(book.yes_depth));
+    setText('no-d-lbl',  'No '  + f1(book.no_depth));
+    if (imbal != null) {
+      const fill = document.getElementById('imbal-fill');
+      const pct  = ((imbal+1)/2)*100;
+      if (imbal >= 0) { fill.style.left=`50%`; fill.style.width=`${pct-50}%`; fill.classList.remove('neg'); }
+      else            { fill.style.left=`${pct}%`; fill.style.width=`${50-pct}%`; fill.classList.add('neg'); }
+    }
+
+    // Chart
+    if (Array.isArray(hist) && hist.length) {
+      chart.data.labels = hist.map(r => r.datetime?.slice(11,19) || '');
+      chart.data.datasets[0].data = hist.map(r => r.mid);
+      chart.update('none');
+    }
+
+    // Trades
+    if (Array.isArray(trades)) updateTradeRows(trades.slice(0, TRADE_ROWS));
+
+  } catch(e) {
+    setStatus(false, 'server offline');
+  }
+}
+
+function setStatus(ok, msg) {
+  document.getElementById('dot').className = 'dot' + (ok ? ' live' : '');
+  setText('status-txt', msg);
+}
+
+function toggleRules() {
+  const p = document.getElementById('rules-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Init ─────────────────────────────────────────────────
+buildLadder('yes-ladder', 'yes');
+buildLadder('no-ladder',  'no');
+buildTradeRows();
+loadMeta();
+poll();
+setInterval(poll, 2000);
+setInterval(loadMeta, 30000);
+</script>
+</body>
+</html>

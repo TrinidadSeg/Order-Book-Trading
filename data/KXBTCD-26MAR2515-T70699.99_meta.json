@@ -4,9 +4,9 @@
   "subtitle": "$70,700 or above",
   "rules": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 3 PM EDT is above 70699.99 at 3 PM EDT on Mar 25, 2026, then the market resolves to Yes.",
   "close_time": "2026-03-25T19:00:00Z",
-  "volume_24h": 12837.0,
-  "volume_total": 19136.0,
-  "open_interest": 14880.0,
-  "last_price": 0.75,
-  "fetched_at": "2026-03-25T18:14:44.908750+00:00"
+  "volume_24h": 129188.0,
+  "volume_total": 129188.0,
+  "open_interest": 55238.0,
+  "last_price": 0.99,
+  "fetched_at": "2026-03-25T22:25:48.529673+00:00"
 }
